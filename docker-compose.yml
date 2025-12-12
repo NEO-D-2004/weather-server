@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  weather-mcp-server:
+    build: .
+    container_name: weather-mcp-server
+    environment:
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+    restart: unless-stopped
+    # MCP servers typically communicate via stdio, not network ports
+    # ports:
+    #   - "3000:3000"
+    # For development/debugging, you can add:
+    # command: ["tail", "-f", "/dev/null"]  # Keep container running for debugging

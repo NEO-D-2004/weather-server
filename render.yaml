@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: weather-mcp-server
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node build/index.js
+    envVars:
+      - key: OPENWEATHER_API_KEY
+        sync: false # Set this manually in Render dashboard
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /
+    plan: free
