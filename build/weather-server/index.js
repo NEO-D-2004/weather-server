@@ -14,16 +14,19 @@ const isValidForecastArgs = (args) => typeof args === 'object' &&
 class WeatherServer {
     server;
     axiosInstance;
+    cache;
+    cacheDuration; // 5 minutes in milliseconds
     constructor() {
         this.server = new Server({
             name: 'example-weather-server',
             version: '0.1.0',
-        }, {
             capabilities: {
                 resources: {},
                 tools: {},
             },
         });
+        this.cache = new Map();
+        this.cacheDuration = 5 * 60 * 1000; // 5 minutes
         this.axiosInstance = axios.create({
             baseURL: 'http://api.openweathermap.org/data/2.5',
             params: {
@@ -68,29 +71,43 @@ class WeatherServer {
         }));
         // ReadResourceRequestSchema is used for both static resources and dynamic resource templates
         this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-            const match = request.params.uri.match(/^weather:/ / ([ ^ /]+)/current$ /
-            ]));
+            const match = request.params.uri.match(/^weather:\/\/(.+)\/current$/);
             if (!match) {
                 throw new McpError(ErrorCode.InvalidRequest, `Invalid URI format: ${request.params.uri}`);
             }
             const city = decodeURIComponent(match[1]);
-            try {
-                const response = await this.axiosInstance.get('weather', // current weather
-                {
-                    params: { q: city },
-                });
+            const cacheKey = `current_weather_${city}`;
+            const cached = this.cache.get(cacheKey);
+            const now = Date.now();
+            if (cached && now - cached.timestamp < this.cacheDuration) {
                 return {
                     contents: [
                         {
                             uri: request.params.uri,
                             mimeType: 'application/json',
-                            text: JSON.stringify({
-                                temperature: response.data.main.temp,
-                                conditions: response.data.weather[0].description,
-                                humidity: response.data.main.humidity,
-                                wind_speed: response.data.wind.speed,
-                                timestamp: new Date().toISOString()
-                            }, null, 2),
+                            text: JSON.stringify(cached.data, null, 2),
+                        },
+                    ],
+                };
+            }
+            try {
+                const response = await this.axiosInstance.get('weather', {
+                    params: { q: city },
+                });
+                const weatherData = {
+                    temperature: response.data.main.temp,
+                    conditions: response.data.weather[0].description,
+                    humidity: response.data.main.humidity,
+                    wind_speed: response.data.wind.speed,
+                    timestamp: new Date().toISOString(),
+                };
+                this.cache.set(cacheKey, { data: weatherData, timestamp: now });
+                return {
+                    contents: [
+                        {
+                            uri: request.params.uri,
+                            mimeType: 'application/json',
+                            text: JSON.stringify(weatherData, null, 2),
                         },
                     ],
                 };
@@ -142,6 +159,19 @@ class WeatherServer {
             }
             const city = request.params.arguments.city;
             const days = Math.min(request.params.arguments.days || 3, 5);
+            const cacheKey = `forecast_${city}_${days}`;
+            const cached = this.cache.get(cacheKey);
+            const now = Date.now();
+            if (cached && now - cached.timestamp < this.cacheDuration) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(cached.data, null, 2),
+                        },
+                    ],
+                };
+            }
             try {
                 const response = await this.axiosInstance.get('forecast', {
                     params: {
@@ -149,6 +179,7 @@ class WeatherServer {
                         cnt: days * 8,
                     },
                 });
+                this.cache.set(cacheKey, { data: response.data.list, timestamp: now });
                 return {
                     content: [
                         {
